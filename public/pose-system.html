@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBX Forearm Animator - Pose System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 10px;
+            color: #333;
+            border: 2px solid #ddd;
+            z-index: 100;
+            min-width: 350px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .control-group {
+            margin-bottom: 20px;
+        }
+        
+        .control-group h3 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .slider-container label {
+            width: 100px;
+            font-size: 12px;
+        }
+        
+        .slider-container input[type="range"] {
+            flex: 1;
+            margin: 0 10px;
+        }
+        
+        .slider-container .value {
+            width: 50px;
+            text-align: center;
+            font-size: 12px;
+            color: #FFD700;
+        }
+        
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            color: #333;
+            border: 1px solid #ddd;
+            z-index: 100;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-size: 24px;
+            z-index: 200;
+        }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 5px;
+            background: #333;
+            outline: none;
+            border-radius: 5px;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+        
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #4CAF50;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        
+        .pose-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .pose-btn:hover {
+            background: #1976D2;
+        }
+        
+        .reset-btn {
+            background: #FF5722;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .reset-btn:hover {
+            background: #D32F2F;
+        }
+        
+        .pose-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="loading" class="loading">Loading 3D Model...</div>
+        
+        <div id="controls" style="display: none;">
+            <h2>🎮 Forearm X-Rotation Animator</h2>
+            
+            <div class="control-group">
+                <h3> Left Forearm (forearm.L)</h3>
+                <div class="slider-container">
+                    <label>Rotate X:</label>
+                    <input type="range" id="forearmL-x" min="-100" max="100" value="0" step="1">
+                    <span class="value" id="forearmL-x-value">0°</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>💪 Right Forearm (forearm.R)</h3>
+                <div class="slider-container">
+                    <label>Rotate X:</label>
+                    <input type="range" id="forearmR-x" min="-100" max="100" value="0" step="1">
+                    <span class="value" id="forearmR-x-value">0°</span>
+                </div>
+            </div>
+            
+            <button class="reset-btn" onclick="resetPose()">Reset to T-Pose</button>
+        </div>
+        
+        <div id="status">
+            <div id="status-text">Initializing...</div>
+        </div>
+    </div>
+
+    <!-- Three.js ES Modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // Global variables
+        let scene, camera, renderer, controls;
+        let fbxModel, skeleton, bones = {};
+        let forearmL, forearmR, hips, spine, upperLegL, upperLegR, lowerLegL, lowerLegR;
+        let mixer, animations = [], clock;
+        
+        // Sitting pose configuration (in degrees)
+        const SITTING_POSE = {
+            'hips': { x: 0, y: 0, z: 0 },
+            'spine': { x: 10, y: 0, z: 0 },
+            'upper_leg.L': { x: -90, y: 0, z: 0 },
+            'upper_leg.R': { x: -90, y: 0, z: 0 },
+            'lower_leg.L': { x: 90, y: 0, z: 0 },
+            'lower_leg.R': { x: 90, y: 0, z: 0 }
+        };
+        
+        // Initialize the 3D scene
+        function init() {
+            updateStatus("Setting up 3D scene...");
+            
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.5, 3);
+            
+            // Create clock for animations
+            clock = new THREE.Clock();
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            const pointLight = new THREE.PointLight(0xffffff, 0.5);
+            pointLight.position.set(-5, 3, 2);
+            scene.add(pointLight);
+            
+            // Add orbit controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.target.set(0, 1, 0);
+            
+            // Add ground plane
+            const groundGeometry = new THREE.PlaneGeometry(10, 10);
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            
+            updateStatus("Loading 3D model...");
+            loadFBXModel();
+        }
+        
+        // Load the model (GLB first, then FBX fallback)
+        function loadFBXModel() {
+            const gltfLoader = new GLTFLoader();
+            
+            updateStatus("Attempting to load GLB model...");
+            
+            gltfLoader.load('/models/human_model_sit_possition_002.glb',
+                function(gltf) {
+                    updateStatus("Processing GLB model with keyframes...");
+                    
+                    fbxModel = gltf.scene;
+                    fbxModel.scale.setScalar(1);
+                    fbxModel.position.y = 0;
+                    
+                    // Enable shadows
+                    fbxModel.traverse(function(child) {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    
+                    scene.add(fbxModel);
+                    
+                    // Setup animations if available
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        updateStatus(`Found ${gltf.animations.length} animation(s) with keyframes!`);
+                        
+                        mixer = new THREE.AnimationMixer(fbxModel);
+                        animations = gltf.animations;
+                        
+                        // Log animation details
+                        gltf.animations.forEach((clip, index) => {
+                            console.log(`Animation ${index}: ${clip.name}, Duration: ${clip.duration}s, Tracks: ${clip.tracks.length}`);
+                        });
+                        
+                        // Play the first animation (sitting pose)
+                        if (animations.length > 0) {
+                            const action = mixer.clipAction(animations[0]);
+                            action.play();
+                            action.paused = true; // Start paused so we can control frame
+                            action.time = 0; // Start at frame 0
+                            updateStatus("Animation loaded - sitting pose keyframes detected!");
+                        }
+                    } else {
+                        updateStatus("No keyframe animations found in this file");
+                    }
+                    
+                    // Find and store bone references
+                    findBones();
+                    
+                    updateStatus("GLB Model with keyframes loaded successfully!");
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('controls').style.display = 'block';
+                    
+                    setupControls();
+                    animate();
+                },
+                function(progress) {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    updateStatus(`Loading GLB: ${percent}%`);
+                },
+                function(error) {
+                    console.log('GLB failed, trying FBX...', error);
+                    loadFBXFallback();
+                }
+            );
+        }
+        
+        // Fallback to FBX if GLB fails
+        function loadFBXFallback() {
+            const fbxLoader = new FBXLoader();
+            
+            updateStatus("Loading FBX model...");
+            
+            fbxLoader.load('/models/human_model_sit_possition_002.fbx', 
+                function(object) {
+                    updateStatus("Processing FBX model...");
+                    
+                    fbxModel = object;
+                    fbxModel.scale.setScalar(0.01);
+                    fbxModel.position.y = 0;
+                    
+                    // Enable shadows
+                    fbxModel.traverse(function(child) {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                    
+                    scene.add(fbxModel);
+                    
+                    // Find and store bone references
+                    findBones();
+                    
+                    updateStatus("FBX Model loaded successfully!");
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('controls').style.display = 'block';
+                    
+                    setupControls();
+                    animate();
+                },
+                function(progress) {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    updateStatus(`Loading FBX: ${percent}%`);
+                },
+                function(error) {
+                    console.error('Error loading both GLB and FBX:', error);
+                    updateStatus("Error loading model. Check that files exist and server is running.");
+                }
+            );
+        }
+        
+        // Find bones in the skeleton
+        function findBones() {
+            if (!fbxModel) return;
+            
+            fbxModel.traverse(function(child) {
+                if (child.isBone || child.type === 'Bone') {
+                    bones[child.name] = child;
+                    
+                    // Find specific bones
+                    if (child.name === 'forearm.L' || child.name.includes('forearm') && child.name.includes('L')) {
+                        forearmL = child;
+                    }
+                    if (child.name === 'forearm.R' || child.name.includes('forearm') && child.name.includes('R')) {
+                        forearmR = child;
+                    }
+                    if (child.name === 'hips' || child.name.includes('hip') || child.name.includes('pelvis')) {
+                        hips = child;
+                    }
+                    if (child.name === 'spine' || child.name.includes('spine')) {
+                        spine = child;
+                    }
+                    if (child.name === 'upper_leg.L' || (child.name.includes('leg') && child.name.includes('L') && child.name.includes('upper'))) {
+                        upperLegL = child;
+                    }
+                    if (child.name === 'upper_leg.R' || (child.name.includes('leg') && child.name.includes('R') && child.name.includes('upper'))) {
+                        upperLegR = child;
+                    }
+                    if (child.name === 'lower_leg.L' || (child.name.includes('leg') && child.name.includes('L') && child.name.includes('lower'))) {
+                        lowerLegL = child;
+                    }
+                    if (child.name === 'lower_leg.R' || (child.name.includes('leg') && child.name.includes('R') && child.name.includes('lower'))) {
+                        lowerLegR = child;
+                    }
+                }
+            });
+            
+            console.log('All bones found:', Object.keys(bones));
+            console.log('Key bones:', {
+                forearmL: forearmL?.name,
+                forearmR: forearmR?.name,
+                hips: hips?.name,
+                spine: spine?.name,
+                upperLegL: upperLegL?.name,
+                upperLegR: upperLegR?.name,
+                lowerLegL: lowerLegL?.name,
+                lowerLegR: lowerLegR?.name
+            });
+        }
+        
+        // Setup control event listeners
+        function setupControls() {
+            // Get all sliders
+            const sliders = document.querySelectorAll('input[type="range"]');
+            sliders.forEach(slider => {
+                slider.addEventListener('input', updateBoneRotation);
+            });
+        }
+        
+        // Update bone rotations
+        function updateBoneRotation(event) {
+            const id = event.target.id;
+            const value = parseFloat(event.target.value);
+            const radians = THREE.MathUtils.degToRad(value);
+            
+            // Update display value
+            document.getElementById(id + '-value').textContent = value + '°';
+            
+            // Apply rotation to appropriate bone
+            const [boneName, axis] = id.split('-');
+            let targetBone = null;
+            
+            switch(boneName) {
+                case 'forearmL': targetBone = forearmL; break;
+                case 'forearmR': targetBone = forearmR; break;
+                case 'hips': targetBone = hips; break;
+                case 'spine': targetBone = spine; break;
+                case 'upper_leg_L': targetBone = upperLegL; break;
+                case 'upper_leg_R': targetBone = upperLegR; break;
+                case 'lower_leg_L': targetBone = lowerLegL; break;
+                case 'lower_leg_R': targetBone = lowerLegR; break;
+            }
+            
+            if (targetBone && axis) {
+                if (axis === 'x') targetBone.rotation.x = radians;
+                if (axis === 'y') targetBone.rotation.y = radians;
+                if (axis === 'z') targetBone.rotation.z = radians;
+            }
+        }
+        
+        // Animation control functions
+        function playKeyframePose() {
+            if (mixer && animations.length > 0) {
+                updateStatus("Playing keyframe sitting pose...");
+                const action = mixer.clipAction(animations[0]);
+                action.paused = false;
+                action.play();
+            } else {
+                updateStatus("No keyframe animations available");
+            }
+        }
+        
+        function pauseAnimation() {
+            if (mixer && animations.length > 0) {
+                const action = mixer.clipAction(animations[0]);
+                action.paused = true;
+                updateStatus("Animation paused");
+            }
+        }
+        
+        function resetToFrame0() {
+            if (mixer && animations.length > 0) {
+                updateStatus("Resetting to frame 0 (keyframe pose)...");
+                const action = mixer.clipAction(animations[0]);
+                action.time = 0;
+                action.paused = true;
+                mixer.update(0); // Force update to frame 0
+                updateStatus("Reset to keyframe pose at frame 0");
+            } else {
+                updateStatus("No keyframe animations to reset");
+            }
+        }
+        
+        // Apply sitting pose (manual)
+        function applySittingPose() {
+            updateStatus("Applying manual sitting pose...");
+            
+            // Pause any running animations first
+            if (mixer && animations.length > 0) {
+                const action = mixer.clipAction(animations[0]);
+                action.paused = true;
+            }
+            
+            // Set pose values and update sliders
+            for (const [boneName, rotations] of Object.entries(SITTING_POSE)) {
+                for (const [axis, degrees] of Object.entries(rotations)) {
+                    const sliderId = boneName.replace('.', '_') + '-' + axis;
+                    const slider = document.getElementById(sliderId);
+                    
+                    if (slider) {
+                        slider.value = degrees;
+                        document.getElementById(sliderId + '-value').textContent = degrees + '°';
+                        
+                        // Apply rotation
+                        const radians = THREE.MathUtils.degToRad(degrees);
+                        let targetBone = bones[boneName];
+                        
+                        if (targetBone) {
+                            if (axis === 'x') targetBone.rotation.x = radians;
+                            if (axis === 'y') targetBone.rotation.y = radians;
+                            if (axis === 'z') targetBone.rotation.z = radians;
+                        }
+                    }
+                }
+            }
+            
+            updateStatus("Manual sitting pose applied!");
+        }
+        
+        // Apply T-pose
+        function applyTPose() {
+            resetPose();
+        }
+        
+        // Apply relaxed pose
+        function applyRelaxedPose() {
+            updateStatus("Applying relaxed pose...");
+            
+            const relaxedPose = {
+                'hips-x': 5,
+                'spine-x': -5,
+                'upper_leg_L-x': -10,
+                'upper_leg_R-x': -10,
+                'lower_leg_L-x': 15,
+                'lower_leg_R-x': 15
+            };
+            
+            for (const [sliderId, degrees] of Object.entries(relaxedPose)) {
+                const slider = document.getElementById(sliderId);
+                if (slider) {
+                    slider.value = degrees;
+                    // Trigger the input event to apply rotation
+                    slider.dispatchEvent(new Event('input'));
+                }
+            }
+            
+            updateStatus("Relaxed pose applied!");
+        }
+        
+        // Reset pose to default
+        function resetPose() {
+            updateStatus("Resetting to T-pose...");
+            
+            // Pause any running animations first
+            if (mixer && animations.length > 0) {
+                const action = mixer.clipAction(animations[0]);
+                action.paused = true;
+            }
+            
+            // Reset sliders
+            const sliders = document.querySelectorAll('input[type="range"]');
+            sliders.forEach(slider => {
+                slider.value = 0;
+                document.getElementById(slider.id + '-value').textContent = '0°';
+            });
+            
+            // Reset bone rotations
+            Object.values(bones).forEach(bone => {
+                if (bone && bone.rotation) {
+                    bone.rotation.set(0, 0, 0);
+                }
+            });
+            
+            updateStatus("T-pose restored!");
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update animation mixer if available
+            if (mixer) {
+                const delta = clock.getDelta();
+                mixer.update(delta);
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        // Update status message
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        window.addEventListener('resize', onWindowResize);
+        
+        // Make functions globally available
+        window.resetPose = resetPose;
+        window.applySittingPose = applySittingPose;
+        window.applyTPose = applyTPose;
+        window.applyRelaxedPose = applyRelaxedPose;
+        window.playKeyframePose = playKeyframePose;
+        window.pauseAnimation = pauseAnimation;
+        window.resetToFrame0 = resetToFrame0;
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

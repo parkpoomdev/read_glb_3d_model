@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FBX Forearm Animator - Debug Version</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #ffffff;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #debug {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            color: #333;
+            border: 2px solid #ddd;
+            z-index: 100;
+            min-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        #debug h3 {
+            margin-top: 0;
+            color: #4CAF50;
+        }
+        
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            background: #f5f5f5;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .info { background: #e3f2fd; color: #1976d2; }
+        
+        .test-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .test-btn:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="debug">
+            <h3>🔍 Debug Information</h3>
+            <div>
+                <button class="test-btn" onclick="testThreeJS()">Test Three.js Loading</button>
+                <button class="test-btn" onclick="testFileAccess()">Test File Access</button>
+                <button class="test-btn" onclick="testGLBLoader()">Test GLB Loader</button>
+                <button class="test-btn" onclick="testFBXLoader()">Test FBX Loader</button>
+                <button class="test-btn" onclick="clearLog()">Clear Log</button>
+            </div>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <!-- Three.js ES Modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        function testThreeJS() {
+            log('Testing Three.js availability...');
+            
+            if (typeof THREE !== 'undefined') {
+                log('✓ Three.js loaded successfully', 'success');
+                log(`Three.js version: ${THREE.REVISION}`, 'info');
+                
+                // Test basic Three.js functionality
+                try {
+                    const scene = new THREE.Scene();
+                    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+                    const renderer = new THREE.WebGLRenderer();
+                    log('✓ Basic Three.js objects created successfully', 'success');
+                } catch (error) {
+                    log(`✗ Error creating Three.js objects: ${error.message}`, 'error');
+                }
+            } else {
+                log('✗ Three.js not loaded!', 'error');
+            }
+        }
+        
+        function testFileAccess() {
+            log('Testing file access...');
+            
+            // Test GLB file
+            fetch('/models/human_model_sit_possition_002.glb')
+                .then(response => {
+                    if (response.ok) {
+                        log(`✓ GLB file accessible (${response.status})`, 'success');
+                        return response.blob();
+                    } else {
+                        log(`✗ GLB file not accessible (${response.status})`, 'error');
+                    }
+                })
+                .then(blob => {
+                    if (blob) {
+                        log(`GLB file size: ${(blob.size / 1024).toFixed(2)} KB`, 'info');
+                    }
+                })
+                .catch(error => {
+                    log(`✗ Error accessing GLB file: ${error.message}`, 'error');
+                });
+                
+            // Test FBX file
+            fetch('/models/human_model_sit_possition_002.fbx')
+                .then(response => {
+                    if (response.ok) {
+                        log(`✓ FBX file accessible (${response.status})`, 'success');
+                        return response.blob();
+                    } else {
+                        log(`✗ FBX file not accessible (${response.status})`, 'error');
+                    }
+                })
+                .then(blob => {
+                    if (blob) {
+                        log(`FBX file size: ${(blob.size / 1024).toFixed(2)} KB`, 'info');
+                    }
+                })
+                .catch(error => {
+                    log(`✗ Error accessing FBX file: ${error.message}`, 'error');
+                });
+        }
+        
+        function testGLBLoader() {
+            log('Testing GLTFLoader...');
+            
+            if (GLTFLoader) {
+                log('✓ GLTFLoader available', 'success');
+                
+                const loader = new GLTFLoader();
+                loader.load(
+                    '/models/human_model_sit_possition_002.glb',
+                    function(gltf) {
+                        log('✓ GLB model loaded successfully!', 'success');
+                        log(`Scenes: ${gltf.scenes.length}`, 'info');
+                        log(`Nodes: ${gltf.scene.children.length}`, 'info');
+                        
+                        // Find bones
+                        const bones = [];
+                        gltf.scene.traverse(function(child) {
+                            if (child.isBone || child.type === 'Bone') {
+                                bones.push(child.name);
+                            }
+                        });
+                        log(`Bones found: ${bones.length}`, 'info');
+                        if (bones.length > 0) {
+                            log(`Sample bones: ${bones.slice(0, 5).join(', ')}`, 'info');
+                            
+                            // Check for forearms
+                            const forearms = bones.filter(name => name.includes('forearm'));
+                            if (forearms.length > 0) {
+                                log(`✓ Forearm bones found: ${forearms.join(', ')}`, 'success');
+                            } else {
+                                log('⚠ No forearm bones found in standard naming', 'error');
+                            }
+                        }
+                    },
+                    function(progress) {
+                        const percent = Math.round((progress.loaded / progress.total) * 100);
+                        log(`GLB loading: ${percent}%`, 'info');
+                    },
+                    function(error) {
+                        log(`✗ GLB loading failed: ${error.message}`, 'error');
+                    }
+                );
+            } else {
+                log('✗ GLTFLoader not available!', 'error');
+            }
+        }
+        
+        function testFBXLoader() {
+            log('Testing FBXLoader...');
+            
+            if (FBXLoader) {
+                log('✓ FBXLoader available', 'success');
+                
+                const loader = new FBXLoader();
+                loader.load(
+                    '/models/human_model_sit_possition_002.fbx',
+                    function(object) {
+                        log('✓ FBX model loaded successfully!', 'success');
+                        log(`Children: ${object.children.length}`, 'info');
+                        
+                        // Find bones
+                        const bones = [];
+                        object.traverse(function(child) {
+                            if (child.isBone || child.type === 'Bone') {
+                                bones.push(child.name);
+                            }
+                        });
+                        log(`Bones found: ${bones.length}`, 'info');
+                        if (bones.length > 0) {
+                            log(`Sample bones: ${bones.slice(0, 5).join(', ')}`, 'info');
+                            
+                            // Check for forearms
+                            const forearms = bones.filter(name => name.includes('forearm'));
+                            if (forearms.length > 0) {
+                                log(`✓ Forearm bones found: ${forearms.join(', ')}`, 'success');
+                            } else {
+                                log('⚠ No forearm bones found in standard naming', 'error');
+                            }
+                        }
+                    },
+                    function(progress) {
+                        const percent = Math.round((progress.loaded / progress.total) * 100);
+                        log(`FBX loading: ${percent}%`, 'info');
+                    },
+                    function(error) {
+                        log(`✗ FBX loading failed: ${error.message}`, 'error');
+                    }
+                );
+            } else {
+                log('✗ FBXLoader not available!', 'error');
+            }
+        }
+        
+        // Make functions globally accessible
+        window.testThreeJS = testThreeJS;
+        window.testFileAccess = testFileAccess;
+        window.testGLBLoader = testGLBLoader;
+        window.testFBXLoader = testFBXLoader;
+        window.clearLog = clearLog;
+        
+        // Auto-run basic tests on load
+        window.addEventListener('load', function() {
+            log('Page loaded, starting tests...');
+            setTimeout(() => {
+                testThreeJS();
+                setTimeout(() => {
+                    testFileAccess();
+                }, 1000);
+            }, 500);
+        });
+    </script>
+</body>
+</html>

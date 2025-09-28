@@ -83,7 +83,8 @@ dist
 
 # Gatsby files
 .cache/
-public
+# Note: Commented out public/ to keep our web assets
+# public
 
 # Storybook build outputs
 .out
@@ -138,3 +139,5 @@ __pycache__/
 .Python
 env/
 venv/
+
+# Note: Keep public/ folder for web assets
