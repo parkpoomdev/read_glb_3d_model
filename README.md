@@ -1,5 +1,8 @@
 # FBX Forearm Animator
 
+<img width="1032" height="576" alt="image" src="https://github.com/user-attachments/assets/4a463344-1548-47e6-a30b-6f7fc4f10ff9" />
+
+
 A simple Node.js web application that loads the `human_model_sit_possition_001.glb` file and provides interactive controls to animate the forearm bones.
 
 ## Features
