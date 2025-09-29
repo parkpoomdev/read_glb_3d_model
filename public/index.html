@@ -182,6 +182,7 @@
         let scene, camera, renderer, controls;
         let fbxModel, skeleton, bones = {};
         let forearmL, forearmR;
+        let mixer, animations = [];
         
         // Initialize the 3D scene
         function init() {
@@ -256,6 +257,34 @@
                     });
                     
                     scene.add(fbxModel);
+                    
+                    // Check for animations and set up sitting pose
+                    console.log('GLB Animations found:', gltf.animations.length);
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        mixer = new THREE.AnimationMixer(fbxModel);
+                        animations = gltf.animations;
+                        
+                        // Log all animation names
+                        gltf.animations.forEach((anim, index) => {
+                            console.log(`Animation ${index}:`, anim.name);
+                        });
+                        
+                        // Try to find and play sitting animation
+                        const sittingAnim = gltf.animations.find(anim => 
+                            anim.name.toLowerCase().includes('sit') || 
+                            anim.name.toLowerCase().includes('pose')
+                        ) || gltf.animations[0]; // Use first animation as fallback
+                        
+                        if (sittingAnim) {
+                            const action = mixer.clipAction(sittingAnim);
+                            action.play();
+                            action.paused = true; // Pause at first frame to maintain pose
+                            action.time = 0; // Set to first frame
+                            console.log('Playing sitting animation:', sittingAnim.name);
+                        }
+                    } else {
+                        console.log('No animations found in GLB file');
+                    }
                     
                     // Find and store bone references
                     findBones();
@@ -347,22 +376,73 @@
             console.log('Left Forearm:', forearmL?.name || 'Not found');
             console.log('Right Forearm:', forearmR?.name || 'Not found');
             
+            // If no animations were found, try to manually create sitting pose
+            if (!mixer && Object.keys(bones).length > 0) {
+                applySittingPose();
+            }
+            
             if (!forearmL || !forearmR) {
                 updateStatus("Warning: Could not find both forearm bones!");
             }
         }
         
+        // Apply a manual sitting pose if no animations are available
+        function applySittingPose() {
+            console.log('Applying manual sitting pose...');
+            
+            // Try to find common bone names for sitting pose
+            const hipBone = bones['hips'] || bones['Hips'] || bones['hip'] || bones['Hip'];
+            const spinalBones = [
+                bones['spine'] || bones['Spine'],
+                bones['spine.001'] || bones['Spine1'],
+                bones['spine.002'] || bones['Spine2']
+            ].filter(Boolean);
+            
+            const leftThigh = bones['thigh.L'] || bones['LeftUpLeg'] || bones['thigh_L'];
+            const rightThigh = bones['thigh.R'] || bones['RightUpLeg'] || bones['thigh_R'];
+            
+            const leftShin = bones['shin.L'] || bones['LeftLeg'] || bones['shin_L'];
+            const rightShin = bones['shin.R'] || bones['RightLeg'] || bones['shin_R'];
+            
+            // Apply sitting rotations (approximate values)
+            if (leftThigh) {
+                leftThigh.rotation.x = THREE.MathUtils.degToRad(-90); // Bend thigh down
+                console.log('Applied sitting rotation to left thigh');
+            }
+            
+            if (rightThigh) {
+                rightThigh.rotation.x = THREE.MathUtils.degToRad(-90); // Bend thigh down
+                console.log('Applied sitting rotation to right thigh');
+            }
+            
+            if (leftShin) {
+                leftShin.rotation.x = THREE.MathUtils.degToRad(90); // Bend shin forward
+                console.log('Applied sitting rotation to left shin');
+            }
+            
+            if (rightShin) {
+                rightShin.rotation.x = THREE.MathUtils.degToRad(90); // Bend shin forward
+                console.log('Applied sitting rotation to right shin');
+            }
+            
+            // Slightly lean the spine forward
+            spinalBones.forEach((spine, index) => {
+                if (spine) {
+                    spine.rotation.x = THREE.MathUtils.degToRad(10 + index * 5);
+                    console.log(`Applied spine rotation to spine bone ${index}`);
+                }
+            });
+            
+            updateStatus("Manual sitting pose applied");
+        }
+        
         // Setup control event listeners
         function setupControls() {
-            // Left forearm controls
+            // Left forearm controls (only X-axis since that's what exists in HTML)
             document.getElementById('forearmL-x').addEventListener('input', updateForearmRotation);
-            document.getElementById('forearmL-y').addEventListener('input', updateForearmRotation);
-            document.getElementById('forearmL-z').addEventListener('input', updateForearmRotation);
             
-            // Right forearm controls
+            // Right forearm controls (only X-axis since that's what exists in HTML)
             document.getElementById('forearmR-x').addEventListener('input', updateForearmRotation);
-            document.getElementById('forearmR-y').addEventListener('input', updateForearmRotation);
-            document.getElementById('forearmR-z').addEventListener('input', updateForearmRotation);
         }
         
         // Update forearm rotations
@@ -375,18 +455,12 @@
             document.getElementById(id + '-value').textContent = value + '°';
             
             // Apply rotation
-            if (id.startsWith('forearmL-') && forearmL) {
-                const axis = id.split('-')[1];
-                if (axis === 'x') forearmL.rotation.x = radians;
-                if (axis === 'y') forearmL.rotation.y = radians;
-                if (axis === 'z') forearmL.rotation.z = radians;
+            if (id === 'forearmL-x' && forearmL) {
+                forearmL.rotation.x = radians;
             }
             
-            if (id.startsWith('forearmR-') && forearmR) {
-                const axis = id.split('-')[1];
-                if (axis === 'x') forearmR.rotation.x = radians;
-                if (axis === 'y') forearmR.rotation.y = radians;
-                if (axis === 'z') forearmR.rotation.z = radians;
+            if (id === 'forearmR-x' && forearmR) {
+                forearmR.rotation.x = radians;
             }
         }
         
@@ -414,6 +488,11 @@
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
+            
+            // Update animation mixer if it exists
+            if (mixer) {
+                mixer.update(0.016); // 60fps
+            }
             
             controls.update();
             renderer.render(scene, camera);
