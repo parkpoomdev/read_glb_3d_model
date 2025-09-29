@@ -177,6 +177,15 @@
                 </div>
             </div>
             
+            <div class="control-group">
+                <h3>Camera Height</h3>
+                <div class="slider-container">
+                    <label>Height (Y):</label>
+                    <input type="range" id="camera-y" min="-2" max="2" value="2.00" step="0.01">
+                    <span class="value" id="camera-y-value">2.00</span>
+                </div>
+            </div>
+
             <button class="reset-btn" onclick="resetPose()">Reset to T-Pose</button>
         </div>
         
@@ -203,6 +212,7 @@
         
         // Global variables
         let scene, camera, renderer, controls;
+        let ground;
         let fbxModel, skeleton, bones = {};
         let forearmL, forearmR, hips, spine, upperLegL, upperLegR, lowerLegL, lowerLegR;
         let mixer, animations = [], clock;
@@ -234,6 +244,7 @@
             
             // Create renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.useLegacyLights = false;
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -255,16 +266,45 @@
             // Add orbit controls
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.target.set(0, 1, 0);
+            controls.target.set(0, 2, 0);
+            // Set initial camera azimuth and distance using spherical coordinates
+            {
+                const desiredAzimuthDeg = 25;
+                const desiredDistance = 5.35;
+                const offset = camera.position.clone().sub(controls.target);
+                const spherical = new THREE.Spherical().setFromVector3(offset);
+                spherical.radius = desiredDistance;
+                spherical.theta = THREE.MathUtils.degToRad(desiredAzimuthDeg);
+                const newOffset = new THREE.Vector3().setFromSpherical(spherical);
+                camera.position.copy(controls.target).add(newOffset);
+            }
             
             // Add ground plane
             const groundGeometry = new THREE.PlaneGeometry(10, 10);
             const groundMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
             scene.add(ground);
             
+            // Hook up camera height slider (translates camera and target along Y)
+            const camYSlider = document.getElementById('camera-y');
+            const camYValue = document.getElementById('camera-y-value');
+            if (camYSlider && camYValue) {
+                camYSlider.value = controls.target.y.toFixed(2);
+                camYValue.textContent = parseFloat(camYSlider.value).toFixed(2);
+                const applyCamY = () => {
+                    const y = parseFloat(camYSlider.value);
+                    const offset = camera.position.clone().sub(controls.target);
+                    controls.target.y = y;
+                    camera.position.copy(controls.target).add(offset);
+                    camYValue.textContent = y.toFixed(2);
+                    controls.update();
+                };
+                camYSlider.addEventListener('input', applyCamY);
+                applyCamY();
+            }
+
             updateStatus("Loading 3D model...");
             loadFBXModel();
         }
